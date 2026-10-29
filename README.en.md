@@ -30,8 +30,14 @@ With Python 3.8+: copy `game/ddraw.ini` and `third_party/cnc-ddraw/ddraw.dll` in
 folder and run `python patch.py 1920 1080 --game-dir "path\to\game"`.
 
 Height must be at least 768, width at least 1024 and a multiple of 4. A resolution with the
-monitor's aspect ratio, about 1.5–2 times smaller, works best: 1600×900 for 2560×1440,
-1366×768 for 1920×1080.
+monitor's aspect ratio, about 1.6 times smaller, works best:
+
+| Monitor | Patch resolution |
+|---|---|
+| 1920×1080 | 1364×768 |
+| 2560×1440 | 1600×900 |
+| 3440×1440 | 2148×900 |
+| 3840×2160 | 2400×1350 |
 
 ## Changes
 
@@ -43,9 +49,10 @@ monitor's aspect ratio, about 1.5–2 times smaller, works best: 1600×900 for 2
 
 | Key | Original | Patched |
 |---|---|---|
-| F1–F4 | help, save, load, — | spells 5–8 |
-| F5–F8 | spells 1–4 | spells 1–4 |
-| Ctrl + F1…F8 | — / assign a spell | assign a spell |
+| F1–F4 | help, save, load, unused | cast the spell assigned to the key |
+| F5–F8 | cast the spell assigned to the key | unchanged |
+| Ctrl + F1…F4 | — | assign a spell to the key |
+| Ctrl + F5…F8 | assign a spell to the key | unchanged |
 | F9 | — | help (key list) |
 | F11 | — | save game |
 | F12 | debug frame counter | load game |
