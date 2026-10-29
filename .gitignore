@@ -1,0 +1,15 @@
+# Build output
+build/
+release/
+*.spec
+__pycache__/
+*.pyc
+
+# Game files must never be committed
+*.exe
+*.EXE
+*.res
+*.RES
+*.alm
+*.ALM
+*.sav
