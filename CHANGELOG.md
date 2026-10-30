@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- The cursor and the item in hand no longer flicker or look see-through while they move.
+  Needs the new `ddraw.ini` (`lock_surfaces=true`).
+
 ## 1.0.0
 
 - Custom resolution from 1024×768 up for the Russian GOG release of ROM.EXE.
