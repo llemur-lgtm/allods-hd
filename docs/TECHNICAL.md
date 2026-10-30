@@ -36,6 +36,9 @@ The sidebar is drawn for a 768 px tall screen: minimap, buttons, portrait, ornam
 
 - `0x41E0DD`: the map's visible-row count no longer stops at an open spellbook, so the map is
   rendered under the bar row.
+- `0x40C6B8`: the main loop skips its black fills next to an open spellbook: a 32 px column at the
+  right edge of the map, of which the sidebar strips cover only 16 px, and a 4 px line between the
+  bar and the inventory. They covered rows the game did not render, now they would cover the map.
 - `0x4763C8`: `ClipCursor` no longer limits the cursor to above an open spellbook.
 - `0x4BCBA8` (`Window::Move`): a full-width move of the spellbook window (vtable `0x59AE50`) is
   turned into a slot-sized one centered at `(width − 640) / 2`.

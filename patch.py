@@ -25,7 +25,7 @@ import os
 import struct
 import sys
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 SOURCE_NAME, TARGET_NAME = "ROM.EXE", "ROM_HD.EXE"
 SOURCE_MD5 = "e9c4ceaa3a9ca255289a87ee9a058d91"  # ROM.EXE of the Russian GOG release
@@ -214,6 +214,10 @@ def panel_code():
 # up to the bar: "je" -> "jmp" leaves only the inventory bar as the limit
 MAP_ROWS_SITE = (0x41E0D9, "83 7d fc 00 74 09", "83 7d fc 00 eb 09")
 CURSOR_CLIP_SITE = (0x4763C6, "85 c0 74 1d", "85 c0 eb 1d")
+# Main loop: black fills next to an open spellbook, for the rows the game no longer draws there;
+# with the map rendered under the bar they only leave black areas on top of it
+BAR_FILLS_SITE = (0x40C6B8, "83 7d 9c 00 74 51")
+BAR_FILLS_DONE = 0x40C76F
 # Slots are drawn and hit-tested at window left + (width-640)/2; with a slot-sized window the
 # offset is 0, which also skips the ornaments (the game's own narrow layout)
 SPELLBOOK_OFFSET_SITES = (0x4B08F7, 0x4B0C4F)
@@ -451,6 +455,7 @@ def build(source, width, height):
 
     for va, original, patched in (MAP_ROWS_SITE, CURSOR_CLIP_SITE):
         img.put(va, bytes.fromhex(original), bytes.fromhex(patched))
+    img.hook(b"\xe9", BAR_FILLS_SITE[0], BAR_FILLS_DONE, bytes.fromhex(BAR_FILLS_SITE[1]))
     for va in SPELLBOOK_OFFSET_SITES:
         img.put(va, bytes.fromhex(SPELLBOOK_OFFSET[0]), bytes.fromhex(SPELLBOOK_OFFSET[1]))
 
