@@ -36,6 +36,9 @@ The sidebar is drawn for a 768 px tall screen: minimap, buttons, portrait, ornam
 
 - `0x41E0DD`: the map's visible-row count no longer stops at an open spellbook, so the map is
   rendered under the bar row.
+- `0x40C6B8`: the main loop skips its black fills next to an open spellbook: a 32 px column at the
+  right edge of the map, of which the sidebar strips cover only 16 px, and a 4 px line between the
+  bar and the inventory. They covered rows the game did not render, now they would cover the map.
 - `0x4763C8`: `ClipCursor` no longer limits the cursor to above an open spellbook.
 - `0x4BCBA8` (`Window::Move`): a full-width move of the spellbook window (vtable `0x59AE50`) is
   turned into a slot-sized one centered at `(width − 640) / 2`.
@@ -89,6 +92,29 @@ times per second, about 280 frames for each case):
 | 1.0.1 with `lock_surfaces` | 0 | 0 |
 
 The frame rate did not change: about 70 frames per second were shown in all cases.
+
+## Message loop
+
+Screens outside the map (the school, the game options window) are redrawn and read the cursor
+from `OnIdle`. `CWinThread::Run` (`0x5734A7`) only calls it when the queue is empty, and with
+`limiter_type=4` cnc-ddraw lets through about 60 `PeekMessage` calls per second. A mouse sending
+more moves than that keeps a new `WM_MOUSEMOVE` waiting after every call, so `OnIdle` starves. The
+main thread uses about 3 % of a core during this: it is sleeping, not working.
+
+`0x57350D`: the check for another message after each one treats a waiting `WM_MOUSEMOVE` as an
+empty queue. Only that message: running `OnIdle` ahead of other queued messages closes the game
+on leaving the school. `PeekMessage` moved to the end of `CAVE` to make room for the check.
+
+`maxgameticks=0` also removes the lag, but it lifts the 60 FPS cap in missions (about 680 FPS).
+
+Game cursor updates per second while the mouse moves about 660 times per second:
+
+| Case | School | Options |
+|---|---|---|
+| 1.0.2 | 0 | 10 |
+| 1.0.3 | 30 | 31 |
+
+Missions stay at 59 FPS, with and without mouse movement.
 
 ## C key
 
