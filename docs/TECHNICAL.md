@@ -57,6 +57,39 @@ read in the hotkey handler (message `0x417`) and the assign / de-duplicate loops
 - The slot table is read from `HKCU\Software\1C\Allods HD\SpellHotkeys` (binary, 8 dwords)
   when the spellbook is created and written there on every assignment.
 
+## Cursor
+
+The cursor (`CMousePointer`, global object at `0x5CD790`) is a software sprite. In a normal frame
+it is drawn into the offscreen surface before the dirty rectangle is copied to the primary, so
+the primary never loses it. Every other cursor change works on the primary directly: hide
+(`0x42A410`) restores the saved background and show (`0x42A430`) saves it and draws the sprite,
+each with its own Lock and Unlock.
+
+cnc-ddraw copies the primary to the screen from a separate thread, woken by every Unlock. With
+`singlecpu=true` it runs on the game's core and can take over right after the hide, so a frame
+without the cursor reaches the screen. An item in hand is the same cursor object with a sprite of
+about 80×80 px, which makes the gap longer and much easier to see.
+
+- `0x44C49E`, `0x44C4B1`, `0x44C4DA`: the screen lock (`0x44C460` / `0x44C4B0`) gets a real nesting
+  count in `[0x5E42FC]`. Unlock is only called by the outermost release.
+- Hide and show calls of `CURSOR_UPDATES` in `patch.py` (set cursor, move, animation frame,
+  tooltip, selection frame) go through stubs in the alignment padding at `0x42A563` and
+  `0x42A426` that hold the lock from before the hide until after the show.
+- `lock_surfaces=true` in `ddraw.ini` makes the render thread take the same critical section as
+  Lock and Unlock, so it waits for the whole change.
+
+Share of captured frames without the cursor while it moves (1600×900, cursor moved about 740
+times per second, about 280 frames for each case):
+
+| Case | Item over the floor | Over the hero |
+|---|---|---|
+| 1.0.0 | 7.2 % | 8.6 % |
+| 1.0.0 + `lock_surfaces` | 5.4 % | 7.3 % |
+| 1.0.1 without `lock_surfaces` | 0.4 % | 0.7 % |
+| 1.0.1 with `lock_surfaces` | 0 | 0 |
+
+The frame rate did not change: about 70 frames per second were shown in all cases.
+
 ## C key
 
 `0x40F755` originally issues map command 5 (open the book to pick a spell) when the book is

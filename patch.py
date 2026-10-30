@@ -16,7 +16,8 @@ Changes:
   * 8 spell hotkeys: F5..F8 as before plus F1..F4 (Ctrl+key assigns); help / save / load move
     from F1 / F2 / F3 to F9 / F11 / F12; hotkeys are kept across game restarts
     (HKCU\\Software\\1C\\Allods HD, value SpellHotkeys);
-  * C casts the spell selected in the book; with nothing selected it opens the book as before.
+  * C casts the spell selected in the book; with nothing selected it opens the book as before;
+  * the cursor and the item in hand no longer flicker while they move.
 """
 import argparse
 import hashlib
@@ -24,7 +25,7 @@ import os
 import struct
 import sys
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 SOURCE_NAME, TARGET_NAME = "ROM.EXE", "ROM_HD.EXE"
 SOURCE_MD5 = "e9c4ceaa3a9ca255289a87ee9a058d91"  # ROM.EXE of the Russian GOG release
@@ -375,6 +376,57 @@ def f1_f4_code(va):
     ], va)
 
 
+# --- cursor ----------------------------------------------------------------------------------
+
+# Every cursor change erases it from the primary surface and draws it again, while cnc-ddraw
+# copies that surface to the screen from its own thread. A frame taken in between has no cursor
+# or only a part of it, so a moving cursor looks see-through, a big item in hand most of all.
+# The screen lock is made nestable and held over the whole change; with lock_surfaces=true in
+# ddraw.ini the render thread waits for it.
+SCREEN_LOCK, SCREEN_UNLOCK = 0x44C460, 0x44C4B0
+SCREEN_LOCK_NESTED = (0x44C49E, "8b 44 24 00 59 c3 90 90 90 90 90 90",
+                      "ff 05 fc 42 5e 00 8b 44 24 00 59 c3")  # inc [lock count], old exit
+SCREEN_UNLOCK_NESTED = (0x44C4B1, "a1 fc 42 5e 00 85 c0 74 29",
+                        "ff 0d fc 42 5e 00 75 2a 90")         # dec [lock count] / jnz exit
+SCREEN_UNLOCK_COUNT = (0x44C4DA, "49", "90")                  # the old decrement after Unlock
+CURSOR_HIDE, CURSOR_SHOW = 0x42A410, 0x42A430
+# Alignment padding between the cursor methods, room for the new hide and show
+CURSOR_HIDE_AREA, CURSOR_SHOW_AREA = (0x42A563, 0x42A570), (0x42A426, 0x42A430)
+# (hide call, show call): set cursor, move, next animation frame, tooltip on, tooltip off,
+# selection frame on, selection frame off
+CURSOR_UPDATES = [
+    (0x42A31B, 0x42A3F0), (0x42A62E, 0x42A678), (0x42A914, 0x42A91B),
+    (0x42B495, 0x42B4F9), (0x42B8B4, 0x42B8EA), (0x42B11B, 0x42B129), (0x42B143, 0x42B151),
+]
+
+
+def cursor_hide_code(va):
+    """Cursor hide that takes the screen lock first."""
+    return assemble([
+        ("51 e8 00 00 00 00", None, (SCREEN_LOCK, "rel32")),    # push ecx / lock
+        ("59 e9 00 00 00 00", None, (CURSOR_HIDE, "rel32")),    # pop ecx / hide
+    ], va)
+
+
+def cursor_show_code(va):
+    """Cursor show that releases the screen lock last."""
+    return assemble([
+        ("e8 00 00 00 00", None, (CURSOR_SHOW, "rel32")),
+        ("e9 00 00 00 00", None, (SCREEN_UNLOCK, "rel32")),
+    ], va)
+
+
+def patch_cursor(img):
+    for site, original, patched in (SCREEN_LOCK_NESTED, SCREEN_UNLOCK_NESTED, SCREEN_UNLOCK_COUNT):
+        img.put(site, bytes.fromhex(original), bytes.fromhex(patched))
+    hide_va, show_va = CURSOR_HIDE_AREA[0], CURSOR_SHOW_AREA[0]
+    img.place(CURSOR_HIDE_AREA, cursor_hide_code(hide_va), fill_check=b"\x90")
+    img.place(CURSOR_SHOW_AREA, cursor_show_code(show_va), fill_check=b"\x90")
+    for hide_site, show_site in CURSOR_UPDATES:
+        img.hook(b"\xe8", hide_site, hide_va, b"\xe8" + rel32(hide_site, CURSOR_HIDE))
+        img.hook(b"\xe8", show_site, show_va, b"\xe8" + rel32(show_site, CURSOR_SHOW))
+
+
 # --- build -----------------------------------------------------------------------------------
 
 def build(source, width, height):
@@ -418,6 +470,8 @@ def build(source, width, height):
     img.put(MAP_KEY_F1_F4_BYTES, b"\x0b" * 4, b"\x0a" * 4)
     for vk, (old, new) in MAIN_KEY_CASES.items():
         img.put(MAIN_KEY_BYTES + vk - 8, bytes([old]), bytes([new]))
+
+    patch_cursor(img)
 
     # let the loader map the code areas and the slot table
     img.set_section_vsize(0, b".text", None, CAVE[1] - IMAGE_BASE - TEXT_RVA)
