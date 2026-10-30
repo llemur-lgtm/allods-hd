@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- The school and the game options window no longer lag or ignore clicks while the mouse moves.
+
 ## 1.0.2
 
 - No more black column at the right edge of the map and black line above the inventory while

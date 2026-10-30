@@ -17,7 +17,8 @@ Changes:
     from F1 / F2 / F3 to F9 / F11 / F12; hotkeys are kept across game restarts
     (HKCU\\Software\\1C\\Allods HD, value SpellHotkeys);
   * C casts the spell selected in the book; with nothing selected it opens the book as before;
-  * the cursor and the item in hand no longer flicker while they move.
+  * the cursor and the item in hand no longer flicker while they move;
+  * screens outside the map (school, game options) keep up with a moving mouse.
 """
 import argparse
 import hashlib
@@ -25,7 +26,7 @@ import os
 import struct
 import sys
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 SOURCE_NAME, TARGET_NAME = "ROM.EXE", "ROM_HD.EXE"
 SOURCE_MD5 = "e9c4ceaa3a9ca255289a87ee9a058d91"  # ROM.EXE of the Russian GOG release
@@ -431,6 +432,33 @@ def patch_cursor(img):
         img.hook(b"\xe8", show_site, show_va, b"\xe8" + rel32(show_site, CURSOR_SHOW))
 
 
+# --- message loop ----------------------------------------------------------------------------
+
+# CWinThread::Run, the check for another message after each one. Screens outside the map are
+# redrawn from OnIdle, which only ran on an empty queue, while limiter_type=4 lets the game through
+# about 60 PeekMessage calls per second: a mouse sending more moves than that kept the queue from
+# ever emptying. A waiting WM_MOUSEMOVE now counts as an empty queue. Everything else must stay
+# ahead of OnIdle: running it before a queued screen change closes the game.
+MESSAGE_LOOP_SITE = (0x57350D, "33 c0 50 50 50 50 53 ff 15 60 2f 63 00 85 c0 75 cf eb 9a")
+RUN_TOP, RUN_ON_IDLE, RUN_PUMP = 0x5734BA, 0x5734D5, 0x5734ED
+PEEK_MESSAGE = "60 2f 63 00"
+
+
+def peek_code():
+    """PeekMessage(ebx, 0, 0, 0, PM_NOREMOVE), moved out to make room at the site."""
+    return assemble([("33 c0 50 50 50 50 53 ff 15 " + PEEK_MESSAGE + " c3", None, None)])
+
+
+def message_loop_code(va, peek_va):
+    return assemble([
+        ("e8 00 00 00 00", None, (peek_va, "rel32")),
+        ("85 c0 74 00", None, (RUN_TOP, "rel8")),   # nothing waiting
+        ("66 81 7b 04 00 02", None, None),          # cmp word [ebx+4], WM_MOUSEMOVE
+        ("74 00", None, (RUN_ON_IDLE, "rel8")),
+        ("eb 00", None, (RUN_PUMP, "rel8")),
+    ], va)
+
+
 # --- build -----------------------------------------------------------------------------------
 
 def build(source, width, height):
@@ -448,7 +476,9 @@ def build(source, width, height):
     panel_va = strip_va + len(strip)
     panel = panel_code()
     move_va = panel_va + len(panel)
-    img.place(CAVE, strip + panel + window_move_code(move_va), fill_check=b"\0")
+    window_move = window_move_code(move_va)
+    peek_va = move_va + len(window_move)
+    img.place(CAVE, strip + panel + window_move + peek_code(), fill_check=b"\0")
     img.hook(b"\xe8", STATS_STRIP_SITE[0], strip_va, bytes.fromhex(STATS_STRIP_SITE[1]))
     img.hook(b"\x52\xe8", PANEL_SITE[0], panel_va, bytes.fromhex(PANEL_SITE[1]))
     img.hook(b"\xe9", WINDOW_MOVE_SITE[0], move_va, bytes.fromhex(WINDOW_MOVE_SITE[1]))
@@ -477,6 +507,8 @@ def build(source, width, height):
         img.put(MAIN_KEY_BYTES + vk - 8, bytes([old]), bytes([new]))
 
     patch_cursor(img)
+    img.put(MESSAGE_LOOP_SITE[0], bytes.fromhex(MESSAGE_LOOP_SITE[1]),
+            message_loop_code(MESSAGE_LOOP_SITE[0], peek_va))
 
     # let the loader map the code areas and the slot table
     img.set_section_vsize(0, b".text", None, CAVE[1] - IMAGE_BASE - TEXT_RVA)

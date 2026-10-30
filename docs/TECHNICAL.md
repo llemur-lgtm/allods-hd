@@ -93,6 +93,29 @@ times per second, about 280 frames for each case):
 
 The frame rate did not change: about 70 frames per second were shown in all cases.
 
+## Message loop
+
+Screens outside the map (the school, the game options window) are redrawn and read the cursor
+from `OnIdle`. `CWinThread::Run` (`0x5734A7`) only calls it when the queue is empty, and with
+`limiter_type=4` cnc-ddraw lets through about 60 `PeekMessage` calls per second. A mouse sending
+more moves than that keeps a new `WM_MOUSEMOVE` waiting after every call, so `OnIdle` starves. The
+main thread uses about 3 % of a core during this: it is sleeping, not working.
+
+`0x57350D`: the check for another message after each one treats a waiting `WM_MOUSEMOVE` as an
+empty queue. Only that message: running `OnIdle` ahead of other queued messages closes the game
+on leaving the school. `PeekMessage` moved to the end of `CAVE` to make room for the check.
+
+`maxgameticks=0` also removes the lag, but it lifts the 60 FPS cap in missions (about 680 FPS).
+
+Game cursor updates per second while the mouse moves about 660 times per second:
+
+| Case | School | Options |
+|---|---|---|
+| 1.0.2 | 0 | 10 |
+| 1.0.3 | 30 | 31 |
+
+Missions stay at 59 FPS, with and without mouse movement.
+
 ## C key
 
 `0x40F755` originally issues map command 5 (open the book to pick a spell) when the book is

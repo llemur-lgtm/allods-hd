@@ -47,6 +47,7 @@ monitor's aspect ratio, about 1.6 times smaller, works best:
   clickable.
 - The cursor and the item in hand no longer flicker or look see-through while they move. This
   needs the `ddraw.ini` of the same patch version.
+- The school and the game options window keep up with a moving mouse.
 - Keys:
 
 | Key | Original | Patched |
